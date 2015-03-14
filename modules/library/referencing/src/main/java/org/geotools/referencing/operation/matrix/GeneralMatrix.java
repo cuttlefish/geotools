@@ -26,15 +26,12 @@ import java.io.FileReader;
 import java.io.BufferedReader;
 import java.io.IOException;
 
-import javax.vecmath.GMatrix;
-
 import org.opengis.referencing.cs.AxisDirection;
 import org.opengis.referencing.operation.Matrix;
 import org.opengis.geometry.Envelope;
 import org.opengis.geometry.MismatchedDimensionException;
 import org.ejml.data.DenseMatrix64F;
 import org.ejml.ops.CommonOps;
-import org.ejml.simple.SimpleMatrix;
 import org.geotools.io.LineFormat;
 import org.geotools.io.ContentFormatException;
 import org.geotools.util.Utilities;
@@ -82,6 +79,7 @@ public class GeneralMatrix implements XMatrix {
      */
     public GeneralMatrix(final int numRow, final int numCol) {
         mat = new DenseMatrix64F(numRow, numCol);
+        setIdentity();
     }
 
     /**
@@ -575,9 +573,34 @@ public class GeneralMatrix implements XMatrix {
         mul(m);
     }
 
-    /**
-     * {@inheritDoc}
-     */
+    
+
+    @Override
+    public int hashCode() {
+        final int prime = 31;
+        int result = 1;
+        
+        if( mat == null ){
+            return prime * result;
+        }
+        result = prime * result + mat.numRows;
+        result = prime * result + mat.numCols;
+        result = prime * result + (int) mat.data[0];
+        return result;
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (this == obj)
+            return true;
+        if (obj == null)
+            return false;
+        if (getClass() != obj.getClass())
+            return false;
+        GeneralMatrix other = (GeneralMatrix) obj;
+        return equals(other,0);
+    }
+
     public boolean equals(final Matrix matrix, final double tolerance) {
         return epsilonEquals(this, matrix, tolerance);
     }
@@ -749,9 +772,9 @@ public class GeneralMatrix implements XMatrix {
     public void copySubMatrix(int rowSource, int colSource,
                               int numRows, int numCol,
                               int rowDest, int colDest, GeneralMatrix target) {
-        int rowLimit = rowSource + numRows;
-        int colLimit = colSource + numCol;
-        CommonOps.extract(mat,rowSource,rowLimit,colSource,colLimit, target.mat, 0,0 );
+        int rowLimit = rowSource + numRows - 1;
+        int colLimit = colSource + numCol - 1;
+        CommonOps.extract(mat, rowSource, rowLimit, colSource, colLimit, target.mat, rowDest, colDest);
     }
 
     /**
@@ -798,7 +821,9 @@ public class GeneralMatrix implements XMatrix {
      */
     public void mul(GeneralMatrix matrix1, GeneralMatrix matrix2) {
         if (mat.numRows == matrix1.mat.numRows && mat.numCols == matrix2.mat.numCols) {
-            CommonOps.mult(matrix1.mat, matrix2.mat, mat);
+            DenseMatrix64F ret = new DenseMatrix64F(mat.getNumRows(), mat.getNumCols());
+            CommonOps.mult(matrix1.mat, matrix2.mat, ret);
+            mat = ret;
         } else {
             DenseMatrix64F ret = new DenseMatrix64F(matrix1.mat.numRows, matrix2.mat.numCols);
             CommonOps.mult(matrix1.mat, matrix2.mat, ret);
@@ -814,22 +839,21 @@ public class GeneralMatrix implements XMatrix {
     }
 
     /**
-     * Resize the matrix to the specified number of rows and columns. If the total number of elements
-     * is <= number of elements it had before the data is saved.  Otherwise a new internal array is
-     * declared and the old data lost.
-     * </p>
-     *
-     * <p>
-     * This is equivalent to calling A.getMatrix().reshape(numRows,numCols,false).
-     * </p>
-     *
-     * @see org.ejml.data.ReshapeMatrix64F#reshape(int,int,boolean)
+     * Resize the matrix to the specified number of rows and columns (preserving remaining elements).
      *
      * @param numRows The new number of rows in the matrix.
      * @param numCols The new number of columns in the matrix.
      */
     public void setSize(int numRows, int numCols) {
-        mat.reshape(numRows,numCols, true);
+        if( numRows == mat.numCols && numCols == mat.numCols ){
+            // do nothing
+        }
+        else {
+            // grow or shrink
+            DenseMatrix64F ret = new DenseMatrix64F(numRows,numCols);
+            CommonOps.extract(mat,0,numRows,0,numCols,ret,0,0);
+            mat = ret;
+        }
     }
 
     public void sub(GeneralMatrix matrix) {
